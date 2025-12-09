@@ -6,7 +6,7 @@ import pandas as pd
 # 1. CONFIGURAÇÃO DA PÁGINA
 # ==========================================
 st.set_page_config(
-    page_title="Projeto Elétrico NBR 5410",
+    page_title="Calculadora Elétrica Prof. Manoel Mendes",
     page_icon="⚡",
     layout="wide"
 )
@@ -114,17 +114,11 @@ def dimensionar_circuito(ib, isolacao, metodo, tipo, fct, fca):
     return detalhes, detalhes_cap, disjuntor_escolhido, status
 
 def dividir_cargas_em_circuitos(lista_potencias, limite_va=1200):
-    """
-    Divide uma lista de cargas (ex: TUGs da cozinha) em sub-listas
-    para não ultrapassar o limite (ex: 1200VA para 127V).
-    """
     if not lista_potencias: return []
-    
     lista_ordenada = sorted(lista_potencias, reverse=True)
     circuitos = []
     circuito_atual = []
     soma_atual = 0
-    
     for pot in lista_ordenada:
         if soma_atual + pot <= limite_va:
             circuito_atual.append(pot)
@@ -133,7 +127,6 @@ def dividir_cargas_em_circuitos(lista_potencias, limite_va=1200):
             if circuito_atual: circuitos.append(circuito_atual)
             circuito_atual = [pot]
             soma_atual = pot
-            
     if circuito_atual: circuitos.append(circuito_atual)
     return circuitos
 
@@ -141,7 +134,10 @@ def dividir_cargas_em_circuitos(lista_potencias, limite_va=1200):
 # 4. INTERFACE DO SITE
 # ==========================================
 
-st.title("⚡ Calculadora de Projetos Elétricos (NBR 5410)")
+# TÍTULO ATUALIZADO CONFORME SOLICITADO
+st.title("⚡ Calculadora de Projetos Elétricos Conforme (NBR 5410)")
+st.markdown("### Desenvolvido por Professor: Manoel Mendes")
+st.markdown("---")
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -240,51 +236,11 @@ if st.session_state['dados_comodos'] and st.button("🚀 Calcular Dimensionament
         if v not in target: target[v] = []
         target[v].extend(c['tugs'])
 
-    # Processamento dos Grupos
+    # Grupos com nomes ajustados para evitar tradução errada
     grupos_para_processar = [
         (tugs_cozinha, "Cozinha e Serviço"),
         (tugs_umidas, "Banheiro e Exterior"),
         (tugs_geral, "Social e Quartos")
     ]
 
-    for dicio_tugs, nome_grupo in grupos_para_processar:
-        for tensao, lista_potencias in dicio_tugs.items():
-            # Define limite: 1200VA para 127V, 2200VA para 220V
-            limite_va = 1200 if tensao == 127 else 2200
-            
-            # Aqui está a mágica da divisão
-            sub_circuitos = dividir_cargas_em_circuitos(lista_potencias, limite_va)
-            
-            for sub in sub_circuitos:
-                pot_total = sum(sub)
-                ib = pot_total / tensao
-                fca = get_fator_agrupamento(agrup_tug)
-                cabo, det_cap, disj, stt = dimensionar_circuito(ib, isolacao, metodo, "tug", fct, fca)
-                
-                resultados.append({
-                    "Circuito": f"{contador_circuitos} - TUG {nome_grupo}", 
-                    "Tensão": f"{tensao}V",
-                    "Potência Total": f"{pot_total} VA", 
-                    "Ib (A)": f"{ib:.2f}",
-                    "FCA": f"{fca:.2f}", 
-                    "Condutor": f"{cabo} {det_cap}",
-                    "Disjuntor": f"{disj}A {stt}"
-                })
-                contador_circuitos += 1
-    
-    # 3. TUEs
-    for c in st.session_state['dados_comodos']:
-        if c['tue']:
-            t = c['tue']
-            ib = t['pot']/t['v']
-            cabo, det_cap, disj, stt = dimensionar_circuito(ib, isolacao, metodo, "tue", fct, 1.0)
-            resultados.append({
-                "Circuito": f"{contador_circuitos} - Equip. {t['nome']}", 
-                "Tensão": f"{t['v']}V", "Potência Total": f"{t['pot']} W", 
-                "Ib (A)": f"{ib:.2f}", "FCA": "1.00", 
-                "Condutor": f"{cabo} {det_cap}", "Disjuntor": f"{disj}A {stt}"
-            })
-            contador_circuitos += 1
-            
-    st.table(pd.DataFrame(resultados))
-    st.success("Cálculo realizado com sucesso!")
+    for
