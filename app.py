@@ -282,4 +282,3 @@ if st.session_state['dados_comodos'] and st.button("🚀 Calcular Dimensionament
             
     st.table(pd.DataFrame(resultados))
     st.success("Cálculo realizado com sucesso!")
-
