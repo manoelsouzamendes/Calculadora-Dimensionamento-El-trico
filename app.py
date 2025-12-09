@@ -6,7 +6,7 @@ import pandas as pd
 # 1. CONFIGURAÇÃO DA PÁGINA
 # ==========================================
 st.set_page_config(
-    page_title="Projeto Elétrico NBR 5410 - Professor Manoel Mendes",
+    page_title="Projeto Elétrico NBR 5410",
     page_icon="⚡",
     layout="wide"
 )
@@ -15,7 +15,7 @@ if 'dados_comodos' not in st.session_state:
     st.session_state['dados_comodos'] = []
 
 # ==========================================
-# 2. BANCO DE DADOS (TABELAS TÉCNICAS)
+# 2. BANCO DE DADOS
 # ==========================================
 CAPACIDADE_IZ_COBRE = {
     "PVC": {
@@ -44,7 +44,7 @@ DISJUNTORES_PADRAO = [6, 10, 13, 16, 20, 25, 32, 40, 50, 63, 70, 80, 100]
 SECOES_MINIMAS = {"iluminacao": 1.5, "tug": 2.5, "tue": 2.5}
 
 # ==========================================
-# 3. FUNÇÕES (LÓGICA)
+# 3. FUNÇÕES LÓGICAS
 # ==========================================
 
 def get_fator_agrupamento(n):
@@ -82,7 +82,7 @@ def definir_potencias_tugs(nome, qtd):
 
 def dimensionar_circuito(ib, isolacao, metodo, tipo, fct, fca):
     margem_seguranca = 1.15
-    if (fct * fca) == 0: return "Erro Fator 0", 0, 0
+    if (fct * fca) == 0: return "Erro Fator 0", "", 0, "ERRO"
     
     iz_necessario = (ib * margem_seguranca) / (fct * fca)
     secao_min = SECOES_MINIMAS.get(tipo, 2.5)
@@ -98,7 +98,7 @@ def dimensionar_circuito(ib, isolacao, metodo, tipo, fct, fca):
             iz_tabela_escolhido = iz_tabela
             break
             
-    if not secao_escolhida: return "> 50mm²", "", 0, 0
+    if not secao_escolhida: return "> 50mm²", "", 0, "ERRO"
     
     iz_corrigido_real = iz_tabela_escolhido * fct * fca
     disjuntor_escolhido = None
@@ -114,11 +114,17 @@ def dimensionar_circuito(ib, isolacao, metodo, tipo, fct, fca):
     return detalhes, detalhes_cap, disjuntor_escolhido, status
 
 def dividir_cargas_em_circuitos(lista_potencias, limite_va=1200):
+    """
+    Divide uma lista de cargas (ex: TUGs da cozinha) em sub-listas
+    para não ultrapassar o limite (ex: 1200VA para 127V).
+    """
     if not lista_potencias: return []
+    
     lista_ordenada = sorted(lista_potencias, reverse=True)
     circuitos = []
     circuito_atual = []
     soma_atual = 0
+    
     for pot in lista_ordenada:
         if soma_atual + pot <= limite_va:
             circuito_atual.append(pot)
@@ -127,6 +133,7 @@ def dividir_cargas_em_circuitos(lista_potencias, limite_va=1200):
             if circuito_atual: circuitos.append(circuito_atual)
             circuito_atual = [pot]
             soma_atual = pot
+            
     if circuito_atual: circuitos.append(circuito_atual)
     return circuitos
 
@@ -156,13 +163,13 @@ c4, c5 = st.columns(2)
 with c4: v_ilum = st.selectbox("V Ilum.", [127, 220], key="vi")
 with c5: v_tug = st.selectbox("V TUG", [127, 220], key="vt")
 
-tem_tue = st.checkbox("Adicionar TUE (Ar/Chuveiro)?")
+tem_tue = st.checkbox("Adicionar Equip. Específico (TUE)?")
 tue_dados = None
 if tem_tue:
     cc1, cc2, cc3 = st.columns([2,1,1])
     tnome = cc1.text_input("Equipamento")
     tpot = cc2.number_input("Potência (W)", 0, step=100)
-    tv = cc3.selectbox("Tensão TUE", [127V, 220V], index=1)
+    tv = cc3.selectbox("Tensão TUE", [127, 220], index=1)
     if tnome and tpot > 0: tue_dados = {"nome": tnome, "pot": tpot, "v": tv}
 
 if st.button("➕ Adicionar", type="primary"):
@@ -171,13 +178,14 @@ if st.button("➕ Adicionar", type="primary"):
         pot_ilum = 100 if area <= 6 else 100 + (math.floor((area-6)/4)*60)
         qtd_tugs = calcular_tomadas_norma(perim, area, nome)
         lista_tugs = definir_potencias_tugs(nome, qtd_tugs)
+        
         st.session_state['dados_comodos'].append({
             "nome": nome, "area": area, "ilum_va": pot_ilum, "v_ilum": v_ilum,
             "tugs": lista_tugs, "v_tug": v_tug, "tue": tue_dados
         })
         st.success(f"{nome} Adicionado!")
 
-# --- TABELA ---
+# --- TABELA DE AMBIENTES ---
 if st.session_state['dados_comodos']:
     st.divider()
     view = []
@@ -197,7 +205,9 @@ if st.session_state['dados_comodos'] and st.button("🚀 Calcular Dimensionament
     st.subheader("3. Memorial de Cálculo")
     fct = get_fator_temperatura(isolacao, temp_amb)
     resultados = []
-    count_circ = 1
+    
+    # Variável local para contar circuitos
+    contador_circuitos = 1
     
     # 1. ILUMINAÇÃO
     total_ilum = sum(c['ilum_va'] for c in st.session_state['dados_comodos'])
@@ -207,12 +217,12 @@ if st.session_state['dados_comodos'] and st.button("🚀 Calcular Dimensionament
         fca_i = get_fator_agrupamento(agrup_ilum)
         cabo, det_cap, disj, stt = dimensionar_circuito(ib_i, isolacao, metodo, "iluminacao", fct, fca_i)
         resultados.append({
-            "Circuito": f"{count_circ} - Iluminação", "Tensão": f"{v_ilum}V", 
+            "Circuito": f"{contador_circuitos} - Iluminação", "Tensão": f"{v_ilum}V", 
             "Potência Total": f"{total_ilum} VA", "Ib (A)": f"{ib_i:.2f}", 
             "FCA": f"{fca_i:.2f}", "Condutor": f"{cabo} {det_cap}", 
             "Disjuntor": f"{disj}A {stt}"
         })
-        count_circ += 1
+        contador_circuitos += 1
     
     # 2. TUGs
     tugs_cozinha = {}
@@ -230,32 +240,37 @@ if st.session_state['dados_comodos'] and st.button("🚀 Calcular Dimensionament
         if v not in target: target[v] = []
         target[v].extend(c['tugs'])
 
-    def processar_grupo_tugs(dicio, nome_gp, fca_user):
-        ret = []
-        for v, lista_p in dicio.items():
-            lim = 1200 if v == 127 else 2200
-            subs = dividir_cargas_em_circuitos(lista_p, limite_va=lim)
-            for sub in subs:
-                pot = sum(sub)
-                ib = pot / v
-                fca = get_fator_agrupamento(fca_user)
+    # Processamento dos Grupos
+    grupos_para_processar = [
+        (tugs_cozinha, "Cozinha e Serviço"),
+        (tugs_umidas, "Banheiro e Exterior"),
+        (tugs_geral, "Social e Quartos")
+    ]
+
+    for dicio_tugs, nome_grupo in grupos_para_processar:
+        for tensao, lista_potencias in dicio_tugs.items():
+            # Define limite: 1200VA para 127V, 2200VA para 220V
+            limite_va = 1200 if tensao == 127 else 2200
+            
+            # Aqui está a mágica da divisão
+            sub_circuitos = dividir_cargas_em_circuitos(lista_potencias, limite_va)
+            
+            for sub in sub_circuitos:
+                pot_total = sum(sub)
+                ib = pot_total / tensao
+                fca = get_fator_agrupamento(agrup_tug)
                 cabo, det_cap, disj, stt = dimensionar_circuito(ib, isolacao, metodo, "tug", fct, fca)
-                ret.append({
-                    "Tipo": f"TUG {nome_gp}", "Tensão": f"{v}V",
-                    "Potência Total": f"{pot} VA", "Ib (A)": f"{ib:.2f}",
-                    "FCA": f"{fca:.2f}", "Condutor": f"{cabo} {det_cap}",
+                
+                resultados.append({
+                    "Circuito": f"{contador_circuitos} - TUG {nome_grupo}", 
+                    "Tensão": f"{tensao}V",
+                    "Potência Total": f"{pot_total} VA", 
+                    "Ib (A)": f"{ib:.2f}",
+                    "FCA": f"{fca:.2f}", 
+                    "Condutor": f"{cabo} {det_cap}",
                     "Disjuntor": f"{disj}A {stt}"
                 })
-        return ret
-
-    # Processa e adiciona
-    grupos = [(tugs_cozinha, "Cozinha e Serviço"), (tugs_umidas, "Banheiro e Exterior"), (tugs_geral, "Social e Quartos")]
-    for dic, nome_g in grupos:
-        res = processar_grupo_tugs(dic, nome_g, agrup_tug)
-        for r in res:
-            r["Circuito"] = f"{count_circ} - {r.pop('Tipo')}"
-            resultados.append(r)
-            count_circ += 1
+                contador_circuitos += 1
     
     # 3. TUEs
     for c in st.session_state['dados_comodos']:
@@ -264,12 +279,12 @@ if st.session_state['dados_comodos'] and st.button("🚀 Calcular Dimensionament
             ib = t['pot']/t['v']
             cabo, det_cap, disj, stt = dimensionar_circuito(ib, isolacao, metodo, "tue", fct, 1.0)
             resultados.append({
-                "Circuito": f"{count_circ} - Equip. {t['nome']}", 
+                "Circuito": f"{contador_circuitos} - Equip. {t['nome']}", 
                 "Tensão": f"{t['v']}V", "Potência Total": f"{t['pot']} W", 
                 "Ib (A)": f"{ib:.2f}", "FCA": "1.00", 
                 "Condutor": f"{cabo} {det_cap}", "Disjuntor": f"{disj}A {stt}"
             })
-            count_circ += 1
+            contador_circuitos += 1
             
     st.table(pd.DataFrame(resultados))
     st.success("Cálculo realizado com sucesso!")
