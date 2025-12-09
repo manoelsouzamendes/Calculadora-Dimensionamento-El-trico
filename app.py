@@ -6,7 +6,7 @@ import pandas as pd
 # 1. CONFIGURAÇÃO DA PÁGINA
 # ==========================================
 st.set_page_config(
-    page_title="Calculadora Elétrica Prof. Manoel Mendes",
+    page_title="Projeto Elétrico NBR 5410",
     page_icon="⚡",
     layout="wide"
 )
@@ -15,7 +15,7 @@ if 'dados_comodos' not in st.session_state:
     st.session_state['dados_comodos'] = []
 
 # ==========================================
-# 2. BANCO DE DADOS
+# 2. BANCO DE DADOS (TABELAS TÉCNICAS)
 # ==========================================
 CAPACIDADE_IZ_COBRE = {
     "PVC": {
@@ -134,7 +134,6 @@ def dividir_cargas_em_circuitos(lista_potencias, limite_va=1200):
 # 4. INTERFACE DO SITE
 # ==========================================
 
-# TÍTULO ATUALIZADO CONFORME SOLICITADO
 st.title("⚡ Calculadora de Projetos Elétricos Conforme (NBR 5410)")
 st.markdown("### Desenvolvido por Professor: Manoel Mendes")
 st.markdown("---")
@@ -243,4 +242,43 @@ if st.session_state['dados_comodos'] and st.button("🚀 Calcular Dimensionament
         (tugs_geral, "Social e Quartos")
     ]
 
-    for
+    for dicio_tugs, nome_grupo in grupos_para_processar:
+        for tensao, lista_potencias in dicio_tugs.items():
+            # Define limite: 1200VA para 127V, 2200VA para 220V
+            limite_va = 1200 if tensao == 127 else 2200
+            
+            sub_circuitos = dividir_cargas_em_circuitos(lista_potencias, limite_va)
+            
+            for sub in sub_circuitos:
+                pot_total = sum(sub)
+                ib = pot_total / tensao
+                fca = get_fator_agrupamento(agrup_tug)
+                cabo, det_cap, disj, stt = dimensionar_circuito(ib, isolacao, metodo, "tug", fct, fca)
+                
+                resultados.append({
+                    "Circuito": f"{contador_circuitos} - TUG {nome_grupo}", 
+                    "Tensão": f"{tensao}V",
+                    "Potência Total": f"{pot_total} VA", 
+                    "Ib (A)": f"{ib:.2f}",
+                    "FCA": f"{fca:.2f}", 
+                    "Condutor": f"{cabo} {det_cap}",
+                    "Disjuntor": f"{disj}A {stt}"
+                })
+                contador_circuitos += 1
+    
+    # 3. TUEs
+    for c in st.session_state['dados_comodos']:
+        if c['tue']:
+            t = c['tue']
+            ib = t['pot']/t['v']
+            cabo, det_cap, disj, stt = dimensionar_circuito(ib, isolacao, metodo, "tue", fct, 1.0)
+            resultados.append({
+                "Circuito": f"{contador_circuitos} - Equip. {t['nome']}", 
+                "Tensão": f"{t['v']}V", "Potência Total": f"{t['pot']} W", 
+                "Ib (A)": f"{ib:.2f}", "FCA": "1.00", 
+                "Condutor": f"{cabo} {det_cap}", "Disjuntor": f"{disj}A {stt}"
+            })
+            contador_circuitos += 1
+            
+    st.table(pd.DataFrame(resultados))
+    st.success("Cálculo realizado com sucesso!")
