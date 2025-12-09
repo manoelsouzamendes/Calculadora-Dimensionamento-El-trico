@@ -1,12 +1,13 @@
 import streamlit as st
 import math
 import pandas as pd
+from fpdf import FPDF
 
 # ==========================================
 # 1. CONFIGURAÇÃO DA PÁGINA
 # ==========================================
 st.set_page_config(
-    page_title="Projeto Elétrico NBR 5410",
+    page_title="Calculadora Elétrica Prof. Manoel Mendes",
     page_icon="⚡",
     layout="wide"
 )
@@ -15,7 +16,7 @@ if 'dados_comodos' not in st.session_state:
     st.session_state['dados_comodos'] = []
 
 # ==========================================
-# 2. BANCO DE DADOS (TABELAS TÉCNICAS)
+# 2. BANCO DE DADOS
 # ==========================================
 CAPACIDADE_IZ_COBRE = {
     "PVC": {
@@ -130,6 +131,81 @@ def dividir_cargas_em_circuitos(lista_potencias, limite_va=1200):
     if circuito_atual: circuitos.append(circuito_atual)
     return circuitos
 
+# --- FUNÇÃO PARA GERAR PDF ---
+def gerar_pdf(dados_comodos, df_resultados, total_va):
+    class PDF(FPDF):
+        def header(self):
+            self.set_font('Arial', 'B', 16)
+            self.cell(0, 10, 'Memorial de Calculo Eletrico - NBR 5410', 0, 1, 'C')
+            self.set_font('Arial', 'I', 12)
+            self.cell(0, 10, 'Desenvolvido por Professor: Manoel Mendes', 0, 1, 'C')
+            self.ln(5)
+
+        def footer(self):
+            self.set_y(-15)
+            self.set_font('Arial', 'I', 8)
+            self.cell(0, 10, f'Pagina {self.page_no()}', 0, 0, 'C')
+
+    pdf = PDF()
+    pdf.add_page()
+    pdf.set_font('Arial', '', 12)
+
+    # 1. Lista de Ambientes
+    pdf.set_font('Arial', 'B', 14)
+    pdf.cell(0, 10, '1. Ambientes do Projeto', 0, 1)
+    pdf.set_font('Arial', '', 10)
+    
+    # Cabeçalho da tabela de ambientes
+    pdf.set_fill_color(200, 220, 255)
+    pdf.cell(40, 8, 'Local', 1, 0, 'C', 1)
+    pdf.cell(30, 8, 'Area (m2)', 1, 0, 'C', 1)
+    pdf.cell(30, 8, 'Ilum (VA)', 1, 0, 'C', 1)
+    pdf.cell(90, 8, 'TUGs / Equipamentos', 1, 1, 'C', 1)
+    
+    for c in dados_comodos:
+        # Tratamento de texto para evitar erro de acentuação no FPDF padrão
+        nome = c['nome'].encode('latin-1', 'replace').decode('latin-1')
+        tue_str = f" | TUE: {c['tue']['nome']} ({c['tue']['pot']}W)" if c['tue'] else ""
+        tugs_str = str(c['tugs']) + tue_str
+        tugs_str = tugs_str.encode('latin-1', 'replace').decode('latin-1')
+        
+        pdf.cell(40, 8, nome, 1)
+        pdf.cell(30, 8, f"{c['area']:.2f}", 1, 0, 'C')
+        pdf.cell(30, 8, str(c['ilum_va']), 1, 0, 'C')
+        pdf.cell(90, 8, tugs_str[:50], 1, 1) # Corta texto muito longo
+
+    pdf.ln(10)
+
+    # 2. Quadro de Cargas
+    pdf.set_font('Arial', 'B', 14)
+    pdf.cell(0, 10, '2. Dimensionamento dos Circuitos', 0, 1)
+    pdf.set_font('Arial', 'B', 9)
+    
+    # Cabeçalho do Quadro
+    cols = ['Circuito', 'Tensao', 'Potencia', 'Ib (A)', 'FCA', 'Condutor', 'Disjuntor']
+    larguras = [40, 20, 30, 20, 15, 45, 20]
+    
+    for i, col in enumerate(cols):
+        pdf.cell(larguras[i], 8, col, 1, 0, 'C', 1)
+    pdf.ln()
+    
+    pdf.set_font('Arial', '', 9)
+    for index, row in df_resultados.iterrows():
+        pdf.cell(larguras[0], 8, str(row['Circuito']), 1)
+        pdf.cell(larguras[1], 8, str(row['Tensão']), 1, 0, 'C')
+        pdf.cell(larguras[2], 8, str(row['Potência Total']), 1, 0, 'C')
+        pdf.cell(larguras[3], 8, str(row['Ib (A)']), 1, 0, 'C')
+        pdf.cell(larguras[4], 8, str(row['FCA']), 1, 0, 'C')
+        pdf.cell(larguras[5], 8, str(row['Condutor']), 1, 0, 'C')
+        pdf.cell(larguras[6], 8, str(row['Disjuntor']).split(' ')[0], 1, 0, 'C') # Pega só o valor
+        pdf.ln()
+
+    pdf.ln(5)
+    pdf.set_font('Arial', 'B', 12)
+    pdf.cell(0, 10, f'Potencia Total Instalada: {total_va} VA/W', 0, 1, 'R')
+
+    return pdf.output(dest='S').encode('latin-1')
+
 # ==========================================
 # 4. INTERFACE DO SITE
 # ==========================================
@@ -201,7 +277,6 @@ if st.session_state['dados_comodos'] and st.button("🚀 Calcular Dimensionament
     fct = get_fator_temperatura(isolacao, temp_amb)
     resultados = []
     
-    # Variável local para contar circuitos
     contador_circuitos = 1
     
     # 1. ILUMINAÇÃO
@@ -235,7 +310,6 @@ if st.session_state['dados_comodos'] and st.button("🚀 Calcular Dimensionament
         if v not in target: target[v] = []
         target[v].extend(c['tugs'])
 
-    # Grupos com nomes ajustados para evitar tradução errada
     grupos_para_processar = [
         (tugs_cozinha, "Cozinha e Serviço"),
         (tugs_umidas, "Banheiro e Exterior"),
@@ -244,25 +318,18 @@ if st.session_state['dados_comodos'] and st.button("🚀 Calcular Dimensionament
 
     for dicio_tugs, nome_grupo in grupos_para_processar:
         for tensao, lista_potencias in dicio_tugs.items():
-            # Define limite: 1200VA para 127V, 2200VA para 220V
             limite_va = 1200 if tensao == 127 else 2200
-            
             sub_circuitos = dividir_cargas_em_circuitos(lista_potencias, limite_va)
-            
             for sub in sub_circuitos:
                 pot_total = sum(sub)
                 ib = pot_total / tensao
                 fca = get_fator_agrupamento(agrup_tug)
                 cabo, det_cap, disj, stt = dimensionar_circuito(ib, isolacao, metodo, "tug", fct, fca)
-                
                 resultados.append({
                     "Circuito": f"{contador_circuitos} - TUG {nome_grupo}", 
-                    "Tensão": f"{tensao}V",
-                    "Potência Total": f"{pot_total} VA", 
-                    "Ib (A)": f"{ib:.2f}",
-                    "FCA": f"{fca:.2f}", 
-                    "Condutor": f"{cabo} {det_cap}",
-                    "Disjuntor": f"{disj}A {stt}"
+                    "Tensão": f"{tensao}V", "Potência Total": f"{pot_total} VA", 
+                    "Ib (A)": f"{ib:.2f}", "FCA": f"{fca:.2f}", 
+                    "Condutor": f"{cabo} {det_cap}", "Disjuntor": f"{disj}A {stt}"
                 })
                 contador_circuitos += 1
     
@@ -280,5 +347,21 @@ if st.session_state['dados_comodos'] and st.button("🚀 Calcular Dimensionament
             })
             contador_circuitos += 1
             
-    st.table(pd.DataFrame(resultados))
+    df_final = pd.DataFrame(resultados)
+    st.table(df_final)
+    
+    # --- BOTÃO PARA GERAR PDF ---
+    total_w = sum(c['tue']['pot'] for c in st.session_state['dados_comodos'] if c['tue'])
+    total_va = total_ilum + sum(sum(t) for t in [c['tugs'] for c in st.session_state['dados_comodos']])
+    total_geral = total_va + total_w
+    
+    pdf_bytes = gerar_pdf(st.session_state['dados_comodos'], df_final, total_geral)
+    
+    st.download_button(
+        label="📄 Baixar Memorial em PDF",
+        data=pdf_bytes,
+        file_name="memorial_eletrico_prof_manoel.pdf",
+        mime="application/pdf"
+    )
+    
     st.success("Cálculo realizado com sucesso!")
